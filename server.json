@@ -1,32 +1,37 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "eu.ansvar/polish-cybersecurity-mcp",
-  "description": "Query CERT Polska / CSIRT NASK guidelines, technical reports, security advisories, and cybersecurity frameworks for Poland",
+  "description": "CERT Polska / CSIRT NASK MCP server — guidelines, technical reports, advisories, and cybersecurity frameworks for Poland",
   "repository": {
     "url": "https://github.com/Ansvar-Systems/polish-cybersecurity-mcp",
     "source": "github"
   },
   "homepage": "https://ansvar.eu",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "keywords": [
-    "cert-polska",
-    "csirt-nask",
-    "polish-cybersecurity",
     "cybersecurity",
     "poland",
-    "information-security",
+    "regulation",
     "compliance",
-    "mcp",
-    "ansvar"
+    "mcp"
   ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@ansvar/polish-cybersecurity-mcp",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "transport": {
         "type": "stdio"
+      }
+    },
+    {
+      "registryType": "npm",
+      "identifier": "@ansvar/polish-cybersecurity-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "https://mcp.ansvar.eu/polish-cybersecurity/mcp"
       }
     }
   ]
