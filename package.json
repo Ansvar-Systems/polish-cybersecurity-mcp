@@ -1,6 +1,6 @@
 {
   "name": "@ansvar/polish-cybersecurity-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "mcpName": "eu.ansvar/polish-cybersecurity-mcp",
   "description": "CERT Polska / CSIRT NASK MCP server — guidelines, technical reports, advisories, and cybersecurity frameworks for Poland",
   "type": "module",

@@ -2,9 +2,9 @@
  * SQLite database access layer for the Polish Cybersecurity (CERT Polska) MCP server.
  *
  * Schema:
- *   - guidance    — CERT Polska guidelines, technical reports, and standards (TR, IT-Grundschutz, BSI-Standard)
- *   - advisories  — BSI security advisories and alerts
- *   - frameworks  — BSI framework series (IT-Grundschutz Kompendium, TR series, BSI Standards)
+ *   - guidance    — CERT Polska guidelines, technical reports, and standards (CERT-PL, KSC, NIS2)
+ *   - advisories  — CERT Polska security advisories and alerts
+ *   - frameworks  — CERT Polska guidance series (CERT-PL series, KSC framework, NIS2 materials)
  *
  * FTS5 virtual tables back full-text search on guidance and advisories.
  */
@@ -260,4 +260,30 @@ export function listFrameworks(): Framework[] {
   return db
     .prepare("SELECT * FROM frameworks ORDER BY id")
     .all() as Framework[];
+}
+
+// --- Freshness helpers --------------------------------------------------------
+
+/**
+ * Returns the most recent data date across guidance and advisories tables.
+ * Falls back to the CERT_PL_DATA_DATE env-var, then "unknown".
+ */
+export function getLatestDataDate(): string {
+  const envDate = process.env["CERT_PL_DATA_DATE"];
+  try {
+    const db = getDb();
+    const row = db
+      .prepare(
+        `SELECT MAX(date_val) AS max_date FROM (
+           SELECT MAX(date) AS date_val FROM guidance WHERE date IS NOT NULL
+           UNION ALL
+           SELECT MAX(date) AS date_val FROM advisories WHERE date IS NOT NULL
+         )`,
+      )
+      .get() as { max_date: string | null } | undefined;
+    const dbDate = row?.max_date ?? null;
+    return dbDate ?? envDate ?? "unknown";
+  } catch {
+    return envDate ?? "unknown";
+  }
 }
