@@ -27,6 +27,7 @@ import {
   searchAdvisories,
   getAdvisory,
   listFrameworks,
+  getLatestDataDate,
 } from "./db.js";
 import { buildCitation } from "./citation.js";
 
@@ -155,6 +156,24 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: "pl_cyber_list_sources",
+    description: "List the primary data sources indexed by this MCP server, including CERT Polska, cert.pl, and NASK.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "pl_cyber_check_data_freshness",
+    description: "Check the freshness of the indexed data: when it was last updated and whether it is current.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // --- Zod schemas for argument validation --------------------------------------
@@ -181,19 +200,42 @@ const GetAdvisoryArgs = z.object({
   reference: z.string().min(1),
 });
 
-// --- Helper ------------------------------------------------------------------
+// --- Helpers ------------------------------------------------------------------
+
+function responseMeta() {
+  return {
+    disclaimer:
+      "This data is provided for informational purposes only. Always verify against official CERT Polska publications at https://cert.pl/.",
+    data_age: getLatestDataDate(),
+    copyright: "CERT Polska / NASK",
+    source_url: "https://cert.pl/",
+  };
+}
 
 function textContent(data: unknown) {
+  const payload =
+    data !== null && typeof data === "object"
+      ? { ...(data as Record<string, unknown>), _meta: responseMeta() }
+      : { data, _meta: responseMeta() };
   return {
     content: [
-      { type: "text" as const, text: JSON.stringify(data, null, 2) },
+      { type: "text" as const, text: JSON.stringify(payload, null, 2) },
     ],
   };
 }
 
-function errorContent(message: string) {
+function errorContent(message: string, errorType: "not_found" | "invalid_input" | "internal_error" = "internal_error") {
   return {
-    content: [{ type: "text" as const, text: message }],
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(
+          { error: message, _error_type: errorType, _meta: responseMeta() },
+          null,
+          2,
+        ),
+      },
+    ],
     isError: true as const,
   };
 }
@@ -223,16 +265,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           status: parsed.status,
           limit: parsed.limit,
         });
-        return textContent({ results, count: results.length });
+        const resultsWithCitation = results.map((r) => {
+          const item = r as unknown as Record<string, unknown>;
+          return {
+            ...item,
+            _citation: buildCitation(
+              String(item.reference ?? ""),
+              String(item.title ?? item.reference ?? ""),
+              "pl_cyber_get_guidance",
+              { reference: String(item.reference ?? "") },
+            ),
+          };
+        });
+        return textContent({ results: resultsWithCitation, count: resultsWithCitation.length });
       }
 
       case "pl_cyber_get_guidance": {
         const parsed = GetGuidanceArgs.parse(args);
         const doc = getGuidance(parsed.reference);
         if (!doc) {
-          return errorContent(`Guidance document not found: ${parsed.reference}`);
+          return errorContent(`Guidance document not found: ${parsed.reference}`, "not_found");
         }
-        const d = doc as Record<string, unknown>;
+        const d = doc as unknown as Record<string, unknown>;
         return textContent({
           ...d,
           _citation: buildCitation(
@@ -251,16 +305,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           severity: parsed.severity,
           limit: parsed.limit,
         });
-        return textContent({ results, count: results.length });
+        const resultsWithCitation = results.map((r) => {
+          const item = r as unknown as Record<string, unknown>;
+          return {
+            ...item,
+            _citation: buildCitation(
+              String(item.reference ?? ""),
+              String(item.title ?? item.reference ?? ""),
+              "pl_cyber_get_advisory",
+              { reference: String(item.reference ?? "") },
+            ),
+          };
+        });
+        return textContent({ results: resultsWithCitation, count: resultsWithCitation.length });
       }
 
       case "pl_cyber_get_advisory": {
         const parsed = GetAdvisoryArgs.parse(args);
         const advisory = getAdvisory(parsed.reference);
         if (!advisory) {
-          return errorContent(`Advisory not found: ${parsed.reference}`);
+          return errorContent(`Advisory not found: ${parsed.reference}`, "not_found");
         }
-        const a = advisory as Record<string, unknown>;
+        const a = advisory as unknown as Record<string, unknown>;
         return textContent({
           ...a,
           _citation: buildCitation(
@@ -293,12 +359,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
       }
 
+      case "pl_cyber_list_sources": {
+        return textContent({
+          sources: [
+            {
+              name: "CERT Polska",
+              url: "https://cert.pl/",
+              description:
+                "Poland's national CERT, operated by NASK. Publishes cybersecurity advisories, threat reports, and KSC/NIS2 implementation guidance.",
+            },
+            {
+              name: "NASK (Research and Academic Computer Network)",
+              url: "https://www.nask.pl/",
+              description:
+                "Naukowa i Akademicka Siec Komputerowa — the Polish research institute operating CERT Polska and maintaining national cybersecurity infrastructure.",
+            },
+            {
+              name: "CERT Polska Publications",
+              url: "https://cert.pl/publikacje/",
+              description:
+                "Official publication archive: technical guides, annual reports, KSC guidance documents, and NIS2 transposition materials.",
+            },
+          ],
+        });
+      }
+
+      case "pl_cyber_check_data_freshness": {
+        const dataAge = getLatestDataDate();
+        const isUnknown = dataAge === "unknown";
+        return textContent({
+          source: "CERT Polska / NASK (https://cert.pl/)",
+          last_checked: new Date().toISOString().slice(0, 10),
+          data_age: dataAge,
+          status: isUnknown ? "unknown" : "indexed",
+          note: isUnknown
+            ? "No data has been ingested yet. Run the ingest workflow to populate the database."
+            : `Most recent document date in the database: ${dataAge}.`,
+        });
+      }
+
       default:
-        return errorContent(`Unknown tool: ${name}`);
+        return errorContent(`Unknown tool: ${name}`, "invalid_input");
     }
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return errorContent(`Invalid arguments for ${name}: ${err.message}`, "invalid_input");
+    }
     const message = err instanceof Error ? err.message : String(err);
-    return errorContent(`Error executing ${name}: ${message}`);
+    return errorContent(`Error executing ${name}: ${message}`, "internal_error");
   }
 });
 
